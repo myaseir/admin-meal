@@ -10,7 +10,7 @@
 // kinds of information are never visually confused with each other.
 "use client";
 
-import { useEffect, useMemo, useState, useCallback } from "react";
+import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { RIDERS } from "@/lib/config/riders";
 import { findRestaurantsForOrder } from "@/lib/config/restaurants";
 import {
@@ -18,6 +18,14 @@ import {
   restaurantWhatsAppLink,
   riderWhatsAppLink,
 } from "@/lib/whatsapp";
+import {
+  unlockAudio,
+  playNewOrderAlert,
+  getNotificationPermission,
+  requestNotificationPermission,
+  showNewOrderNotification,
+  NotificationPermissionState,
+} from "@/lib/notifications";
 import { OrderStatus } from "@/lib/sheets/updateOrderStatus";
 import { SheetOrderRow } from "@/lib/sheets/getOrders";
 
@@ -67,14 +75,48 @@ export default function OrdersDashboardPage() {
   const [notifiedRiders, setNotifiedRiders] = useState<Record<string, boolean>>({});
   const [sentToRider, setSentToRider] = useState<Record<string, boolean>>({});
 
+  // New-order alerts (sound + browser Notification). Both only fire while
+  // this tab is open — see lib/notifications.ts for why there's no true
+  // push here. alertsEnabledRef mirrors alertsEnabled state but lets
+  // fetchOrders read the current value without needing it in its
+  // useCallback dependency array (which would otherwise tear down and
+  // rebuild the polling interval every time the toggle is clicked).
+  const [alertsEnabled, setAlertsEnabled] = useState(false);
+  const alertsEnabledRef = useRef(false);
+  const [notifPermission, setNotifPermission] = useState<NotificationPermissionState>("default");
+  const seenOrderIdsRef = useRef<Set<string> | null>(null); // null = first load, don't alert yet
+
+  useEffect(() => {
+    setNotifPermission(getNotificationPermission());
+  }, []);
+
   const fetchOrders = useCallback(async () => {
     try {
       const res = await fetch("/api/admin/orders");
       const data = await res.json();
       if (data.success) {
-        setOrders(data.orders);
+        const incoming: SheetOrderRow[] = data.orders;
+        setOrders(incoming);
         setError(null);
         setLastRefreshed(new Date());
+
+        const currentIds = new Set(incoming.map((o) => o["Order ID"]));
+
+        if (seenOrderIdsRef.current !== null) {
+          const newOnes = incoming.filter(
+            (o) => o["Order Status"] === "New" && !seenOrderIdsRef.current!.has(o["Order ID"])
+          );
+          if (newOnes.length > 0) {
+            if (alertsEnabledRef.current) playNewOrderAlert();
+            const summary =
+              newOnes.length === 1
+                ? `${newOnes[0]["Order ID"]} — ${newOnes[0]["Customer Name"]} · Rs. ${newOnes[0]["Customer Total"]}`
+                : `${newOnes.length} new orders waiting`;
+            showNewOrderNotification(summary, () => setStatusFilter("New"));
+          }
+        }
+
+        seenOrderIdsRef.current = currentIds;
       } else {
         setError(data.error || "Couldn't load orders.");
       }
@@ -171,6 +213,14 @@ export default function OrdersDashboardPage() {
     window.open(url, "_blank", "noopener,noreferrer");
   }
 
+  async function handleEnableAlerts() {
+    unlockAudio();
+    const perm = await requestNotificationPermission();
+    setNotifPermission(perm);
+    setAlertsEnabled(true);
+    alertsEnabledRef.current = true;
+  }
+
   return (
     <main className="min-h-screen bg-[#F7F7F8]">
       <div className="max-w-3xl mx-auto px-4 sm:px-6 py-6">
@@ -195,12 +245,28 @@ export default function OrdersDashboardPage() {
               </p>
             </div>
           </div>
-          <button
-            onClick={fetchOrders}
-            className="text-xs font-semibold text-purple-700 hover:text-purple-800 px-3 py-2 rounded-lg hover:bg-purple-50 active:bg-purple-100 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-500"
-          >
-            Refresh
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleEnableAlerts}
+              className={`text-xs font-semibold px-3 py-2 rounded-lg transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-500 ${
+                alertsEnabled
+                  ? "text-emerald-700 bg-emerald-50"
+                  : "text-purple-700 hover:text-purple-800 hover:bg-purple-50"
+              }`}
+            >
+              {alertsEnabled
+                ? notifPermission === "granted"
+                  ? "Alerts on"
+                  : "Sound on · notifications blocked"
+                : "Enable Alerts"}
+            </button>
+            <button
+              onClick={fetchOrders}
+              className="text-xs font-semibold text-purple-700 hover:text-purple-800 px-3 py-2 rounded-lg hover:bg-purple-50 active:bg-purple-100 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-500"
+            >
+              Refresh
+            </button>
+          </div>
         </div>
 
         {/* Status filter — segmented, each tab carries its own count so the
@@ -477,8 +543,8 @@ function OrderCard({
               {order["Location Link"] &&
                 order["Location Link"] !== "Not available" &&
                 order["Location Link"] !== "" && (
-                  <a
-                    href={String(order["Location Link"])}
+                  
+                    <a href={String(order["Location Link"])}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="mt-2 flex items-center justify-center gap-2 w-full bg-purple-600 text-white text-sm font-semibold py-2.5 rounded-xl hover:bg-purple-700 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-500 focus-visible:ring-offset-1"

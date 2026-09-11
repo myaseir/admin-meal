@@ -52,4 +52,4 @@ export async function markOrdersPaid(orderIds: string[]): Promise<MarkOrdersPaid
     console.error("markOrdersPaid error:", err);
     return { success: false, error: "Network error while contacting Apps Script." };
   }
-}
+}   

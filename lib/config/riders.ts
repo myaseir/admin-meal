@@ -17,7 +17,7 @@ export interface Rider {
 }
 
 export const RIDERS: Rider[] = [
-  { id: "R01", name: "Rider One", phone: "03169030178" },
-  { id: "R02", name: "Rider Two", phone: "923001234568" },
-  { id: "R03", name: "Rider Three", phone: "923001234569" },
+  { id: "R01", name: "Daniyal", phone: "03408974556" },
+  { id: "R02", name: "Afzal", phone: "03554605878" },
+  { id: "R03", name: "Altaf", phone: "03554800575" },
 ];

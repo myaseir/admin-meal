@@ -23,6 +23,7 @@ export interface Restaurant {
 
 export const RESTAURANTS: Restaurant[] = [
   { name: "Yak and Bull Cafe Skardu", phone: "03169030178" },
+  { name: "Yak and Bull Cafe Hameed Garh", phone: "03169030178" },
   { name: "Baltistan Tea and Grill House", phone: "03169030178" },
   { name: "The Kitchen", phone: "03169030178" },
   { name: "Domino's Pizza Skardu", phone: "03169030178" },

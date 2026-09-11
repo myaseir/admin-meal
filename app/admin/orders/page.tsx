@@ -55,6 +55,20 @@ function fmt(n: number | string): string {
   return `Rs. ${Number(n).toLocaleString("en-PK")}`;
 }
 
+// Reads "Customer Note" defensively via a loose cast: SheetOrderRow (in
+// lib/sheets/getOrders.ts) may not have this key declared yet since it's a
+// newly added sheet column. Once you add `"Customer Note": string` to that
+// type, this can go back to plain `order["Customer Note"]`. Treats a
+// missing cell, empty string, or the literal "N/A" checkout sends for a
+// blank note as "no note" — so cards only ever show the note box when
+// there's something real to show.
+function getCustomerNote(order: SheetOrderRow): string {
+  const raw = (order as unknown as Record<string, unknown>)["Customer Note"];
+  const note = String(raw ?? "").trim();
+  if (note === "" || note.toUpperCase() === "N/A") return "";
+  return note;
+}
+
 export default function OrdersDashboardPage() {
   const [orders, setOrders] = useState<SheetOrderRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -473,6 +487,7 @@ function OrderCard({
   const hasRiderPayout =
     order["Estimated Fuel Cost"] !== "N/A" && order["Estimated Fuel Cost"] !== "";
   const orderId = order["Order ID"];
+  const customerNote = getCustomerNote(order);
 
   return (
     <div className="relative bg-white rounded-2xl border border-gray-200/80 overflow-hidden transition-shadow hover:shadow-md shadow-sm">
@@ -492,6 +507,10 @@ function OrderCard({
             {isConfirmed && <Dot color="bg-blue-500" title="Confirmed with customer" />}
             {order["Rider ID"] && <Dot color="bg-indigo-500" title="Rider assigned" />}
             {isSentToRider && <Dot color="bg-orange-500" title="Sent to rider" />}
+            {/* Amber dot — same "scan the spine, not the paragraph" logic as
+                the other dots: lets dispatch spot a customization request
+                without opening the card. */}
+            {customerNote && <Dot color="bg-amber-500" title="Has a note from customer" />}
           </div>
           <p className="text-[13px] text-gray-500 truncate">
             <span className="font-semibold text-gray-700">{order["Customer Name"]}</span>
@@ -554,6 +573,22 @@ function OrderCard({
                 )}
             </div>
           </div>
+
+          {/* Note from customer — placed right before Items, same reasoning
+              as the email template: whoever's about to read what to
+              prepare/pack should see any customization request at that
+              exact moment, not buried further down the card. Omitted
+              entirely when there's nothing to show. */}
+          {customerNote && (
+            <div>
+              <SectionLabel>Note from customer</SectionLabel>
+              <div className="bg-amber-50 rounded-xl px-4 py-3 border border-amber-200">
+                <p className="text-sm font-semibold text-amber-900 whitespace-pre-line leading-relaxed">
+                  📝 {customerNote}
+                </p>
+              </div>
+            </div>
+          )}
 
           {/* Items */}
           <div>

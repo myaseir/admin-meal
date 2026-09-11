@@ -45,6 +45,18 @@ function stripDescMarkersForPlainText(items: string): string {
   return items.replace(/\[\[DESC\]\]([\s\S]*?)\[\[\/DESC\]\]/g, "$1");
 }
 
+// Reads "Customer Note" defensively via a loose cast, same reasoning as
+// the admin dashboard's getCustomerNote(): SheetOrderRow may not have this
+// key declared yet since it's a newly added sheet column. Treats a
+// missing cell, empty string, or the literal "N/A" checkout sends for a
+// blank note as "no note", so callers never have to special-case those.
+function getCustomerNote(order: SheetOrderRow): string {
+  const raw = (order as unknown as Record<string, unknown>)["Customer Note"];
+  const note = String(raw ?? "").trim();
+  if (note === "" || note.toUpperCase() === "N/A") return "";
+  return note;
+}
+
 // ---------------------------------------------------------------------
 // Customer
 // ---------------------------------------------------------------------
@@ -82,9 +94,18 @@ function extractItemsForRestaurant(items: string, restaurantName: string): strin
   return stripDescMarkersForPlainText(withoutPrices).trim();
 }
 
+// The customer's free-text note (e.g. "no tomatoes", "no sauce") applies
+// to the whole order, not to any one restaurant's block specifically — so
+// when a cart spans multiple shops, EVERY restaurant message gets the
+// same note line. There's no reliable way to tell which shop a note was
+// "meant for" from free text alone, and silently dropping it for a
+// multi-restaurant order would be worse than a kitchen seeing a note that
+// doesn't apply to them.
 export function buildRestaurantMessage(order: SheetOrderRow, restaurant: Restaurant): string {
   const itemLines = extractItemsForRestaurant(order["Items"], restaurant.name);
-  return `${restaurant.name}\n\n${itemLines}\n\n~ Meal Bear Skardu`;
+  const note = getCustomerNote(order);
+  const noteLine = note ? `\n\n\u{1F4DD} Note: ${note}` : ""; // \u{1F4DD} = 📝
+  return `${restaurant.name}\n\n${itemLines}${noteLine}\n\n~ Meal Bear Skardu`;
 }
 
 export function restaurantWhatsAppLink(order: SheetOrderRow, restaurant: Restaurant): string {
@@ -110,6 +131,7 @@ export function buildRiderMessage(order: SheetOrderRow): string {
   const restaurantNames = order["Restaurant(s)"];
   const isMultiRestaurant = restaurantNames.includes(",");
   const itemsSection = stripPricesForRider(order["Items"]);
+  const note = getCustomerNote(order);
 
   const hasLocationLink =
     order["Location Link"] &&
@@ -126,6 +148,7 @@ export function buildRiderMessage(order: SheetOrderRow): string {
   // the correct Unicode codepoint at runtime regardless of file encoding.
   const scooter = "\u{1F6F5}"; // 🛵
   const pin = "\u{1F4CD}";     // 📍
+  const memo = "\u{1F4DD}";    // 📝
 
   return (
     `${scooter} New Delivery Ready — ${order["Order ID"]}\n\n` +
@@ -133,6 +156,7 @@ export function buildRiderMessage(order: SheetOrderRow): string {
       ? `${pin} Pickup from ${restaurantNames} (visit in this order)\n\n`
       : `${pin} Pickup from ${restaurantNames}\n\n`) +
     `Items:\n${itemsSection}\n\n` +
+    (note ? `${memo} Note: ${note}\n\n` : "") +
     `Customer: ${order["Customer Name"]}\n` +
     `Phone: ${order["Customer Phone"]}\n` +
     `Address: ${order["Address"]}\n\n` +

@@ -22,6 +22,7 @@ export interface SheetOrderRow {
   "Address": string;
   "Restaurant(s)": string;
   "Items": string;
+  "Customer Note": string;
   "Subtotal": number | string;
   "Distance (km)": number | string;
   "Round-trip Distance (km)": number | string;
